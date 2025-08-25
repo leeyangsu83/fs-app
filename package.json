@@ -1,0 +1,25 @@
+{
+  "name": "fs-project",
+  "version": "1.0.0",
+  "description": "- Copy `.env.example` to `.env` - Set your key value:",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "nodemon": "^3.1.10"
+  },
+  "dependencies": {
+    "cheerio": "^1.0.0-rc.12",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.1",
+    "express": "^4.21.2",
+    "iconv-lite": "^0.7.0",
+    "nedb-promises": "^6.2.3",
+    "node-fetch": "^2.7.0",
+    "xml2js": "^0.6.2"
+  }
+}

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>재무제표 시각화</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; }
+      .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+      input, select, button { padding: 8px; font-size: 14px; }
+      #results { margin-top: 12px; max-height: 200px; overflow: auto; border: 1px solid #ddd; }
+      #results div { padding: 6px 8px; cursor: pointer; }
+      #results div:hover { background: #f2f2f2; }
+      canvas { max-width: 900px; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body>
+    <h2>재무제표 시각화</h2>
+    <div class="row">
+      <input id="search" placeholder="회사명 입력" style="min-width: 260px;" />
+      <select id="reprt">
+        <option value="11013">1분기보고서 (11013)</option>
+        <option value="11012">반기보고서 (11012)</option>
+        <option value="11014">3분기보고서 (11014)</option>
+        <option value="11011" selected>사업보고서 (11011)</option>
+      </select>
+      <input id="year" type="number" min="2015" max="2100" value="2023" />
+      <button id="load">불러오기</button>
+    </div>
+    <div id="results"></div>
+    <h3 id="corpTitle"></h3>
+    <canvas id="chart" height="140"></canvas>
+    <div id="table"></div>
+    <div id="ratios"></div>
+    <div class="row" style="margin-top:12px;">
+      <button id="explain">AI 설명</button>
+    </div>
+    <pre id="ai" style="white-space:pre-wrap; background:#fafafa; padding:12px; border:1px solid #eee;"></pre>
+
+    <script>
+      const el = (id) => document.getElementById(id);
+      let selected = null; // { corp_code, corp_name }
+      const resultsDiv = el('results');
+
+      async function search(q) {
+        if (!q) { resultsDiv.innerHTML=''; return; }
+        const r = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+        const list = await r.json();
+        resultsDiv.innerHTML = list.map(item => `<div data-code="${item.corp_code}" data-name="${item.corp_name}">${item.corp_name} (${item.corp_code})</div>`).join('');
+      }
+
+      el('search').addEventListener('input', (e) => search(e.target.value));
+
+      resultsDiv.addEventListener('click', (e) => {
+        const div = e.target.closest('div');
+        if (!div) return;
+        selected = { corp_code: div.dataset.code, corp_name: div.dataset.name };
+        el('corpTitle').textContent = `${selected.corp_name} (${selected.corp_code})`;
+      });
+
+      let chart;
+      function renderChart(rows) {
+        const toNumber = (v) => {
+          const s = String(v ?? '').replace(/,/g, '').trim();
+          if (s === '' || s === '-') return NaN;
+          const neg = /^\(.*\)$/.test(s);
+          const core = neg ? s.slice(1, -1) : s;
+          const n = Number(core);
+          return neg ? -n : n;
+        };
+
+        // pick key financial metrics by account name
+        const pickers = [
+          { key: '자산총계', match: (n) => /자산총계/.test(n) },
+          { key: '부채총계', match: (n) => /부채총계/.test(n) },
+          { key: '자본총계', match: (n) => /자본총계/.test(n) },
+          { key: '매출액', match: (n) => /(매출액|수익\(매출액\))/.test(n) },
+          { key: '영업이익', match: (n) => /영업이익/.test(n) },
+          { key: '당기순이익', match: (n) => /(당기순이익|분기순이익|반기순이익)/.test(n) },
+        ];
+
+        const byName = {};
+        for (const r of rows) {
+          const name = String(r.account_nm || '').trim();
+          if (!name) continue;
+          for (const p of pickers) {
+            if (!byName[p.key] && p.match(name)) {
+              byName[p.key] = r;
+            }
+          }
+        }
+
+        const labels = pickers.map(p => p.key);
+        // scale to 억원
+        const DIV = 100000000;
+        const toEok = (n) => Number.isFinite(n) ? n / DIV : n;
+        const th = labels.map(l => toEok(toNumber(byName[l]?.thstrm_amount)));
+        const fr = labels.map(l => toEok(toNumber(byName[l]?.frmtrm_amount)));
+        const bf = labels.map(l => toEok(toNumber(byName[l]?.bfefrmtrm_amount)));
+
+        const any = [...th, ...fr, ...bf].some(v => !Number.isNaN(v) && v !== 0);
+        const ctx = el('chart').getContext('2d');
+        if (chart) chart.destroy();
+        chart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              { label: `당기(${el('year').value})`, data: th.map(v => Number.isNaN(v) ? 0 : v), backgroundColor: '#4f78ff' },
+              { label: `전기(${Number(el('year').value)-1})`, data: fr.map(v => Number.isNaN(v) ? 0 : v), backgroundColor: '#ff7f50' },
+              { label: `전전기(${Number(el('year').value)-2})`, data: bf.map(v => Number.isNaN(v) ? 0 : v), backgroundColor: '#9b59b6' },
+            ]
+          },
+          options: { 
+            responsive: true, 
+            scales: { 
+              y: { 
+                beginAtZero: true,
+                title: { display: true, text: '억원' },
+                ticks: { callback: (v) => `${Number(v).toLocaleString('ko-KR')}억` }
+              } 
+            },
+            plugins: { tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Number(ctx.parsed.y).toLocaleString('ko-KR')}억` } } }
+          }
+        });
+
+        // render table
+        const fmt = (n) => Number.isFinite(n) ? `${n.toLocaleString('ko-KR')}억` : '-';
+        const currency = rows.find(r => r.currency)?.currency || '';
+        const html = [
+          '<table border="1" cellspacing="0" cellpadding="6" style="margin-top:12px; border-color:#ddd;">',
+          '<thead><tr><th>항목</th><th>당기</th><th>전기</th><th>전전기</th><th>통화</th></tr></thead><tbody>',
+          ...labels.map((l, i) => `<tr><td>${l}</td><td style="text-align:right;">${fmt(th[i])}</td><td style="text-align:right;">${fmt(fr[i])}</td><td style="text-align:right;">${fmt(bf[i])}</td><td>${currency}</td></tr>`),
+          '</tbody></table>'
+        ].join('');
+        document.getElementById('table').innerHTML = html;
+
+        if (!any) {
+          alert('해당 조건에서 주요 재무항목 데이터가 없습니다. 연도/보고서를 변경해 보세요.');
+        }
+      }
+
+      el('load').addEventListener('click', async () => {
+        if (!selected) { alert('회사명을 검색하고 선택하세요.'); return; }
+        const year = el('year').value;
+        const reprt = el('reprt').value;
+        const qs = new URLSearchParams({
+          corp_code: selected.corp_code,
+          bsns_year: String(year),
+          reprt_code: String(reprt),
+        });
+        let resp, data;
+        try {
+          resp = await fetch(`/api/financials?${qs.toString()}`);
+          data = await resp.json();
+        } catch (e) {
+          alert('네트워크 오류가 발생했습니다.');
+          return;
+        }
+        if (!resp.ok || data?.error) {
+          const msg = data?.error === 'missing_api_key' ? 'API 키가 설정되지 않았습니다. 상단 입력칸에 키를 넣거나 .env에 설정해 주세요.' : `요청 실패: ${data?.error || resp.status}`;
+          alert(msg);
+          return;
+        }
+        if (data?.status && data.status !== '000') {
+          alert(`오류(${data.status}): ${data.message}`);
+          return;
+        }
+        const rows = Array.isArray(data?.list) ? data.list : [];
+        renderChart(rows);
+
+        // fetch and render ratios and stock metrics
+        try {
+          const r2 = await fetch(`/api/metrics?${qs.toString()}`);
+          const m = await r2.json();
+          const M = m.metrics || {};
+          const S = m.stock || {};
+          const fmtNum = (n) => Number.isFinite(n) ? n.toLocaleString('ko-KR') : '-';
+          const fmtPct = (n) => Number.isFinite(n) ? `${n.toFixed(2)}%` : '-';
+          const fmtEok = (n) => Number.isFinite(n) ? `${(n/100000000).toLocaleString('ko-KR')}억` : '-';
+          const ratiosHtml = [
+            '<h3 style="margin-top:16px;">주요 재무지표</h3>',
+            '<table border="1" cellspacing="0" cellpadding="6" style="border-color:#ddd;">',
+            '<thead><tr><th>지표</th><th>값</th></tr></thead><tbody>',
+            `<tr><td>부채비율</td><td style="text-align:right;">${fmtPct(M.debtRatio)}</td></tr>`,
+            `<tr><td>유보율</td><td style="text-align:right;">${fmtPct(M.reserveRatio)}</td></tr>`,
+            `<tr><td>ROA</td><td style="text-align:right;">${fmtPct(M.roa)}</td></tr>`,
+            `<tr><td>ROE</td><td style="text-align:right;">${fmtPct(M.roe)}</td></tr>`,
+            `<tr><td>영업이익</td><td style="text-align:right;">${fmtEok(M.operatingIncome)}</td></tr>`,
+            `<tr><td>EBITDA</td><td style="text-align:right;">${fmtEok(M.ebitda)}</td></tr>`,
+            '</tbody></table>',
+            '<h3 style="margin-top:16px;">종목 지표</h3>',
+            '<table border="1" cellspacing="0" cellpadding="6" style="border-color:#ddd;">',
+            '<thead><tr><th>지표</th><th>값</th></tr></thead><tbody>',
+            `<tr><td>PER</td><td style="text-align:right;">${fmtNum(S.per)}</td></tr>`,
+            `<tr><td>PBR</td><td style="text-align:right;">${fmtNum(S.pbr)}</td></tr>`,
+            `<tr><td>EPS</td><td style="text-align:right;">${fmtNum(S.eps)}</td></tr>`,
+            '</tbody></table>'
+          ].join('');
+          document.getElementById('ratios').innerHTML = ratiosHtml;
+        } catch (e) {
+          document.getElementById('ratios').innerHTML = '';
+        }
+      });
+
+      el('explain').addEventListener('click', async () => {
+        if (!selected) { alert('회사명을 검색하고 선택하세요.'); return; }
+        const year = el('year').value;
+        const reprt = el('reprt').value;
+        const qs = new URLSearchParams({
+          corp_code: selected.corp_code,
+          bsns_year: String(year),
+          reprt_code: String(reprt),
+        });
+        el('ai').textContent = '생성 중...';
+        try {
+          const r = await fetch(`/api/explain?${qs.toString()}`);
+          const j = await r.json();
+          if (!r.ok || j?.error) {
+            el('ai').textContent = `오류: ${j?.error || r.status}`;
+            return;
+          }
+          el('ai').textContent = j.text || '설명이 없습니다';
+        } catch (e) {
+          el('ai').textContent = '네트워크 오류';
+        }
+      });
+    </script>
+  </body>
+  </html>
+
+
