@@ -1,18 +1,16 @@
-// Seed NeDB with corp codes parsed from CORPCODE.xml
+// Seed PostgreSQL with corp codes parsed from CORPCODE.xml
 const fs = require('fs');
 const path = require('path');
 const xml2js = require('xml2js');
-const Datastore = require('nedb-promises');
+const { Pool } = require('pg');
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
 const XML_PATH = path.join(__dirname, '..', 'data', 'corpcode', 'CORPCODE.xml');
-const DB_DIR = path.join(__dirname, '..', 'data');
-const DB_PATH = path.join(DB_DIR, 'corpCodes.db');
 
 async function parseXml(filePath) {
   const xml = fs.readFileSync(filePath, 'utf8');
   const parser = new xml2js.Parser({ explicitArray: false, mergeAttrs: true, trim: true });
   const result = await parser.parseStringPromise(xml);
-  // Actual structure: <result><list><corp_code/>...</list><list>...</list>...</result>
   const listNodes = result?.result?.list || [];
   const items = Array.isArray(listNodes) ? listNodes : [listNodes];
   return items.map((c) => ({
@@ -29,19 +27,53 @@ async function main() {
     console.error('XML not found:', XML_PATH);
     process.exit(1);
   }
-  if (!fs.existsSync(DB_DIR)) fs.mkdirSync(DB_DIR, { recursive: true });
-  const db = Datastore.create({ filename: DB_PATH, autoload: true });
-  await db.remove({}, { multi: true });
-  const docs = await parseXml(XML_PATH);
-  if (docs.length === 0) {
-    console.error('Parsed 0 corp entries. Check XML structure.');
+
+  if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL environment variable not set. Please check your .env file.');
     process.exit(1);
   }
-  // Index for search
-  db.ensureIndex({ fieldName: 'corp_name' });
-  db.ensureIndex({ fieldName: 'corp_code', unique: true });
-  await db.insert(docs);
-  console.log(`Seeded ${docs.length} corps to`, DB_PATH);
+
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const client = await pool.connect();
+
+  try {
+    console.log('Connected to PostgreSQL. Setting up table...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS corps (
+        corp_code VARCHAR(8) PRIMARY KEY,
+        corp_name VARCHAR(255) NOT NULL,
+        corp_eng_name VARCHAR(255),
+        stock_code VARCHAR(6),
+        modify_date VARCHAR(8)
+      );
+    `);
+    await client.query('CREATE INDEX IF NOT EXISTS idx_corp_name ON corps (corp_name);');
+    console.log('Table "corps" is ready.');
+
+    await client.query('TRUNCATE TABLE corps;');
+    console.log('Existing data cleared.');
+
+    const docs = await parseXml(XML_PATH);
+    if (docs.length === 0) {
+      console.error('Parsed 0 corp entries. Check XML structure.');
+      process.exit(1);
+    }
+
+    // Use pg-format or a loop for robust insertion
+    console.log(`Inserting ${docs.length} entries...`);
+    for (const doc of docs) {
+      await client.query(
+        'INSERT INTO corps (corp_code, corp_name, corp_eng_name, stock_code, modify_date) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (corp_code) DO NOTHING',
+        [doc.corp_code, doc.corp_name, doc.corp_eng_name, doc.stock_code, doc.modify_date]
+      );
+    }
+    
+    console.log(`Seeded ${docs.length} corps to PostgreSQL.`);
+  } finally {
+    await client.release();
+    await pool.end();
+    console.log('Connection closed.');
+  }
 }
 
 main().catch((e) => {
