@@ -85,26 +85,26 @@
         <div id="bs-assets-stack" class="bs-stack">
           <div id="bs-non-current-assets" class="bs-box">
             <div class="bs-label">비유동자산</div>
-            <div id="bs-nca-value" class="bs-value"></div>
+            <div class="bs-value"></div>
           </div>
           <div id="bs-current-assets" class="bs-box" style="margin-top: 2px;">
             <div class="bs-label">유동자산</div>
-            <div id="bs-ca-value" class="bs-value"></div>
+            <div class="bs-value"></div>
           </div>
         </div>
         <div class="spacer"></div>
         <div id="bs-liabilities-equity-stack" class="bs-stack">
             <div id="bs-equity" class="bs-box">
               <div class="bs-label">자본</div>
-              <div id="bs-equity-value" class="bs-value"></div>
+              <div class="bs-value"></div>
             </div>
             <div id="bs-non-current-liabilities" class="bs-box" style="margin-top: 2px;">
               <div class="bs-label">비유동부채</div>
-              <div id="bs-ncl-value" class="bs-value"></div>
+              <div class="bs-value"></div>
             </div>
             <div id="bs-current-liabilities" class="bs-box" style="margin-top: 2px;">
               <div class="bs-label">유동부채</div>
-              <div id="bs-cl-value" class="bs-value"></div>
+              <div class="bs-value"></div>
             </div>
         </div>
       </div>
@@ -152,26 +152,30 @@
         const toTrillion = (n) => (n / 1_0000_0000_0000).toFixed(2);
         const fmt = (n) => `${toTrillion(n)}조 원`;
 
-        // Calculate heights as a percentage of total assets
         const ca_h = (currentAssets / totalAssets) * 100;
         const nca_h = (nonCurrentAssets / totalAssets) * 100;
         const cl_h = (currentLiabilities / totalAssets) * 100;
         const ncl_h = (nonCurrentLiabilities / totalAssets) * 100;
         const eq_h = (totalEquity / totalAssets) * 100;
 
-        // Set heights
-        el('bs-current-assets').style.height = `${ca_h}%`;
-        el('bs-non-current-assets').style.height = `${nca_h}%`;
-        el('bs-current-liabilities').style.height = `${cl_h}%`;
-        el('bs-non-current-liabilities').style.height = `${ncl_h}%`;
-        el('bs-equity').style.height = `${eq_h}%`;
+        const setBoxStyle = (boxId, value, height) => {
+            const box = el(boxId);
+            const labelEl = box.querySelector('.bs-label');
+            const valueEl = box.querySelector('.bs-value');
 
-        // Set values
-        el('bs-ca-value').textContent = fmt(currentAssets);
-        el('bs-nca-value').textContent = fmt(nonCurrentAssets);
-        el('bs-cl-value').textContent = fmt(currentLiabilities);
-        el('bs-ncl-value').textContent = fmt(nonCurrentLiabilities);
-        el('bs-equity-value').textContent = fmt(totalEquity);
+            box.style.height = `${height}%`;
+            valueEl.textContent = fmt(value);
+
+            const isVisible = height > 4; // Hide text if box height is less than 4%
+            labelEl.style.visibility = isVisible ? 'visible' : 'hidden';
+            valueEl.style.visibility = isVisible ? 'visible' : 'hidden';
+        };
+
+        setBoxStyle('bs-current-assets', currentAssets, ca_h);
+        setBoxStyle('bs-non-current-assets', nonCurrentAssets, nca_h);
+        setBoxStyle('bs-current-liabilities', currentLiabilities, cl_h);
+        setBoxStyle('bs-non-current-liabilities', nonCurrentLiabilities, ncl_h);
+        setBoxStyle('bs-equity', totalEquity, eq_h);
       }
 
       function renderChart(rows) {
@@ -184,9 +188,7 @@
           return neg ? -n : n;
         };
 
-        // Expanded pickers for detailed balance sheet
         const pickers = [
-          // Balance Sheet Items
           { key: '자산총계', match: (n) => /^자산총계$/.test(n) },
           { key: '유동자산', match: (n) => /^유동자산$/.test(n) },
           { key: '비유동자산', match: (n) => /^비유동자산$/.test(n) },
@@ -194,7 +196,6 @@
           { key: '유동부채', match: (n) => /^유동부채$/.test(n) },
           { key: '비유동부채', match: (n) => /^비유동부채$/.test(n) },
           { key: '자본총계', match: (n) => /^자본총계$/.test(n) },
-          // Income Statement Items
           { key: '매출액', match: (n) => /(매출액|수익\(매출액\))/.test(n) },
           { key: '영업이익', match: (n) => /영업이익/.test(n) },
           { key: '당기순이익', match: (n) => /(당기순이익|분기순이익|반기순이익)/.test(n) },
@@ -212,13 +213,12 @@
         }
 
         const barChartLabels = ['자산총계', '부채총계', '자본총계', '매출액', '영업이익', '당기순이익'];
-        const DIV = 100000000; // scale to 억원
+        const DIV = 100000000;
         const toEok = (n) => Number.isFinite(n) ? n / DIV : n;
         const th = barChartLabels.map(l => toEok(toNumber(byName[l]?.thstrm_amount)));
         const fr = barChartLabels.map(l => toEok(toNumber(byName[l]?.frmtrm_amount)));
         const bf = barChartLabels.map(l => toEok(toNumber(byName[l]?.bfefrmtrm_amount)));
 
-        // Data for balance sheet visualization (current period)
         const bsData = {
           totalAssets: toNumber(byName['자산총계']?.thstrm_amount),
           currentAssets: toNumber(byName['유동자산']?.thstrm_amount),
@@ -256,7 +256,6 @@
           }
         });
 
-        // render table
         const fmt = (n) => Number.isFinite(n) ? `${n.toLocaleString('ko-KR')}억` : '-';
         const currency = rows.find(r => r.currency)?.currency || '';
         const html = [
