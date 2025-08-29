@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { Pool } = require('pg');
+const Datastore = require('nedb-promises');
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 require('dotenv').config();
@@ -19,9 +19,10 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.OPEN_DART_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// PostgreSQL setup
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
+// NeDB setup
+const db = Datastore.create({
+  filename: path.join(__dirname, 'data/corpCodes.db'),
+  autoload: true,
 });
 
 app.use('/', express.static(path.join(__dirname, 'public')));
@@ -31,15 +32,10 @@ app.get('/api/search', async (req, res) => {
   try {
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
-    // Use ILIKE for case-insensitive search in PostgreSQL
-    const query = {
-      text: `SELECT corp_code, corp_name, stock_code FROM corps 
-             WHERE corp_name ILIKE $1 OR corp_eng_name ILIKE $1 
-             LIMIT 20`,
-      values: [`%${q}%`],
-    };
-    const { rows } = await pool.query(query);
-    res.json(rows);
+    // Use a case-insensitive regex for search in NeDB
+    const regex = new RegExp(q, 'i');
+    const docs = await db.find({ $or: [{ corp_name: regex }, { corp_eng_name: regex }] }).limit(20);
+    res.json(docs);
   } catch (e) {
     res.status(500).json({ error: 'search_failed', detail: e.message });
   }
@@ -131,8 +127,7 @@ app.get('/api/metrics', async (req, res) => {
     const roe = ratio(netIncome, totalEquity);
 
     // 2) Stock metrics via Naver Finance if possible
-    const stockResult = await pool.query('SELECT stock_code FROM corps WHERE corp_code = $1', [corp_code]);
-    const stock = stockResult.rows[0];
+    const stock = await db.findOne({ corp_code: corp_code });
     let per = NaN, pbr = NaN, eps = NaN;
     if (stock && stock.stock_code && /^\d{6}$/.test(String(stock.stock_code).trim())) {
       const code = String(stock.stock_code).trim();
@@ -169,7 +164,7 @@ app.get('/api/metrics', async (req, res) => {
         if (!Number.isFinite(per)) per = tryTable('PER');
         if (!Number.isFinite(pbr)) pbr = tryTable('PBR');
         if (!Number.isFinite(eps)) eps = tryTable('EPS');
-      } catch {}
+      } catch {} // Ignore errors during scraping
     }
 
     res.json({
@@ -202,14 +197,13 @@ app.get('/api/explain', async (req, res) => {
     const m = await mr.json();
     if (!mr.ok) return res.status(500).json({ error: 'metrics_failed', detail: m?.error || 'unknown' });
 
-    const corpResult = await pool.query('SELECT corp_name FROM corps WHERE corp_code = $1', [corp_code]);
-    const corpRow = corpResult.rows[0];
+    const corpRow = await db.findOne({ corp_code: corp_code });
     const corpName = corpRow?.corp_name || corp_code;
 
     const prompt = [
-      `다음 회사의 ${bsns_year}년도 보고서(${reprt_code}) 재무정보를 한국어로 간단하고 이해하기 쉽게 요약해 주세요.`,
-      `회사: ${corpName} (${corp_code})`,
-      `핵심지표(원 단위):`,
+      `다음 회사의 ${bsns_year}년도 보고서(${reprt_code}) 재무정보를 한국어로 간단하고 이해하기 쉽게 요약해 주세요.`, 
+      `회사: ${corpName} (${corp_code})`, 
+      `핵심지표(원 단위):`, 
       `- 자산총계: ${m.metrics?.totalAssets ?? 'N/A'}`, 
       `- 부채총계: ${m.metrics?.totalLiabilities ?? 'N/A'}`, 
       `- 자본총계: ${m.metrics?.totalEquity ?? 'N/A'}`, 
@@ -217,8 +211,8 @@ app.get('/api/explain', async (req, res) => {
       `- 영업이익: ${m.metrics?.operatingIncome ?? 'N/A'}`, 
       `- 당기순이익: ${m.metrics?.netIncome ?? 'N/A'}`, 
       `- EBITDA: ${m.metrics?.ebitda ?? 'N/A'}`, 
-      `재무비율(%): 부채비율=${m.metrics?.debtRatio ?? 'N/A'}, 유보율=${m.metrics?.reserveRatio ?? 'N/A'}, ROA=${m.metrics?.roa ?? 'N/A'}, ROE=${m.metrics?.roe ?? 'N/A'}`,
-      m.stock?.stock_code ? `종목지표: PER=${m.stock?.per ?? 'N/A'}, PBR=${m.stock?.pbr ?? 'N/A'}, EPS=${m.stock?.eps ?? 'N/A'}` : '종목지표: 비상장 또는 종목코드 없음',
+      `재무비율(%): 부채비율=${m.metrics?.debtRatio ?? 'N/A'}, 유보율=${m.metrics?.reserveRatio ?? 'N/A'}, ROA=${m.metrics?.roa ?? 'N/A'}, ROE=${m.metrics?.roe ?? 'N/A'}`, 
+      m.stock?.stock_code ? `종목지표: PER=${m.stock?.per ?? 'N/A'}, PBR=${m.stock?.pbr ?? 'N/A'}, EPS=${m.stock?.eps ?? 'N/A'}` : '종목지표: 비상장 또는 종목코드 없음', 
       `설명 형식: 1) 전반 요약 2) 수익성/성장성 3) 재무건전성 4) 종합 코멘트`
     ].join('\n');
 
