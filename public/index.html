@@ -189,13 +189,13 @@
         };
 
         const pickers = [
-          { key: '자산총계', match: (n) => /^자산총계$/.test(n) },
-          { key: '유동자산', match: (n) => /^유동자산$/.test(n) },
-          { key: '비유동자산', match: (n) => /^비유동자산$/.test(n) },
-          { key: '부채총계', match: (n) => /^부채총계$/.test(n) },
-          { key: '유동부채', match: (n) => /^유동부채$/.test(n) },
-          { key: '비유동부채', match: (n) => /^비유동부채$/.test(n) },
-          { key: '자본총계', match: (n) => /^자본총계$/.test(n) },
+          { key: '자산총계', match: (n) => /자산총계/.test(n) },
+          { key: '유동자산', match: (n) => /유동자산/.test(n) },
+          { key: '비유동자산', match: (n) => /비유동자산/.test(n) },
+          { key: '부채총계', match: (n) => /부채총계/.test(n) },
+          { key: '유동부채', match: (n) => /유동부채/.test(n) },
+          { key: '비유동부채', match: (n) => /비유동부채/.test(n) },
+          { key: '자본총계', match: (n) => /자본총계/.test(n) },
           { key: '매출액', match: (n) => /(매출액|수익\(매출액\))/.test(n) },
           { key: '영업이익', match: (n) => /영업이익/.test(n) },
           { key: '당기순이익', match: (n) => /(당기순이익|분기순이익|반기순이익)/.test(n) },
