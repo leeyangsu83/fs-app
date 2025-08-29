@@ -18,7 +18,7 @@
       .balance-sheet-container {
         display: flex;
         align-items: flex-end;
-        height: 400px;
+        height: 450px;
         width: 100%;
         max-width: 600px;
         border: 1px solid #ccc;
@@ -38,14 +38,27 @@
         transition: height 0.5s ease-in-out;
         border-radius: 4px;
         overflow: hidden;
+        width: 100%;
       }
-      .bs-label { font-size: 1.2em; }
-      .bs-value { font-size: 0.9em; margin-top: 5px; }
-      #bs-assets { background-color: #4a90e2; width: 48%; }
-      #bs-liabilities { background-color: #e27c4a; }
-      #bs-equity { background-color: #50e3c2; }
-      .bs-stack { width: 48%; height: 100%; display: flex; flex-direction: column; }
+      .bs-label { font-size: 1.1em; }
+      .bs-value { font-size: 0.85em; margin-top: 5px; }
+      .bs-stack { 
+        width: 48%; 
+        height: 100%; 
+        display: flex; 
+        flex-direction: column; 
+        justify-content: flex-end;
+      }
       .spacer { width: 4%; }
+
+      /* Asset Colors */
+      #bs-non-current-assets { background-color: #3d7dc1; }
+      #bs-current-assets { background-color: #6ca3e9; }
+      /* Liabilities & Equity Colors */
+      #bs-non-current-liabilities { background-color: #c16a3d; }
+      #bs-current-liabilities { background-color: #e98b6c; }
+      #bs-equity { background-color: #50e3c2; margin-top: 2px; }
+
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
@@ -69,20 +82,30 @@
     <div id="balance-sheet-vis">
       <h3 style="margin-top:16px;">재무상태표 시각화 (당기)</h3>
       <div class="balance-sheet-container">
-        <div id="bs-assets" class="bs-box">
-          <div class="bs-label">자산</div>
-          <div id="bs-assets-value" class="bs-value"></div>
+        <div id="bs-assets-stack" class="bs-stack">
+          <div id="bs-non-current-assets" class="bs-box">
+            <div class="bs-label">비유동자산</div>
+            <div id="bs-nca-value" class="bs-value"></div>
+          </div>
+          <div id="bs-current-assets" class="bs-box" style="margin-top: 2px;">
+            <div class="bs-label">유동자산</div>
+            <div id="bs-ca-value" class="bs-value"></div>
+          </div>
         </div>
         <div class="spacer"></div>
-        <div class="bs-stack">
-          <div id="bs-liabilities" class="bs-box">
-            <div class="bs-label">부채</div>
-            <div id="bs-liabilities-value" class="bs-value"></div>
-          </div>
-          <div id="bs-equity" class="bs-box">
-            <div class="bs-label">자본</div>
-            <div id="bs-equity-value" class="bs-value"></div>
-          </div>
+        <div id="bs-liabilities-equity-stack" class="bs-stack">
+            <div id="bs-equity" class="bs-box">
+              <div class="bs-label">자본</div>
+              <div id="bs-equity-value" class="bs-value"></div>
+            </div>
+            <div id="bs-non-current-liabilities" class="bs-box" style="margin-top: 2px;">
+              <div class="bs-label">비유동부채</div>
+              <div id="bs-ncl-value" class="bs-value"></div>
+            </div>
+            <div id="bs-current-liabilities" class="bs-box" style="margin-top: 2px;">
+              <div class="bs-label">유동부채</div>
+              <div id="bs-cl-value" class="bs-value"></div>
+            </div>
         </div>
       </div>
     </div>
@@ -117,9 +140,10 @@
 
       let chart;
 
-      function renderBalanceSheet(assets, liabilities, equity) {
+      function renderBalanceSheet(data) {
         const container = el('balance-sheet-vis');
-        if (!Number.isFinite(assets) || !Number.isFinite(liabilities) || !Number.isFinite(equity) || assets <= 0) {
+        const { totalAssets, currentAssets, nonCurrentAssets, totalLiabilities, currentLiabilities, nonCurrentLiabilities, totalEquity } = data;
+        if (![totalAssets, currentAssets, nonCurrentAssets, totalLiabilities, currentLiabilities, nonCurrentLiabilities, totalEquity].every(v => Number.isFinite(v)) || totalAssets <= 0) {
           container.style.display = 'none';
           return;
         }
@@ -128,16 +152,26 @@
         const toTrillion = (n) => (n / 1_0000_0000_0000).toFixed(2);
         const fmt = (n) => `${toTrillion(n)}조 원`;
 
-        const liabHeight = (liabilities / assets) * 100;
-        const equityHeight = (equity / assets) * 100;
+        // Calculate heights as a percentage of total assets
+        const ca_h = (currentAssets / totalAssets) * 100;
+        const nca_h = (nonCurrentAssets / totalAssets) * 100;
+        const cl_h = (currentLiabilities / totalAssets) * 100;
+        const ncl_h = (nonCurrentLiabilities / totalAssets) * 100;
+        const eq_h = (totalEquity / totalAssets) * 100;
 
-        el('bs-assets').style.height = '100%';
-        el('bs-liabilities').style.height = `${liabHeight}%`;
-        el('bs-equity').style.height = `${equityHeight}%`;
+        // Set heights
+        el('bs-current-assets').style.height = `${ca_h}%`;
+        el('bs-non-current-assets').style.height = `${nca_h}%`;
+        el('bs-current-liabilities').style.height = `${cl_h}%`;
+        el('bs-non-current-liabilities').style.height = `${ncl_h}%`;
+        el('bs-equity').style.height = `${eq_h}%`;
 
-        el('bs-assets-value').textContent = fmt(assets);
-        el('bs-liabilities-value').textContent = fmt(liabilities);
-        el('bs-equity-value').textContent = fmt(equity);
+        // Set values
+        el('bs-ca-value').textContent = fmt(currentAssets);
+        el('bs-nca-value').textContent = fmt(nonCurrentAssets);
+        el('bs-cl-value').textContent = fmt(currentLiabilities);
+        el('bs-ncl-value').textContent = fmt(nonCurrentLiabilities);
+        el('bs-equity-value').textContent = fmt(totalEquity);
       }
 
       function renderChart(rows) {
@@ -150,11 +184,17 @@
           return neg ? -n : n;
         };
 
-        // pick key financial metrics by account name
+        // Expanded pickers for detailed balance sheet
         const pickers = [
-          { key: '자산총계', match: (n) => /자산총계/.test(n) },
-          { key: '부채총계', match: (n) => /부채총계/.test(n) },
-          { key: '자본총계', match: (n) => /자본총계/.test(n) },
+          // Balance Sheet Items
+          { key: '자산총계', match: (n) => /^자산총계$/.test(n) },
+          { key: '유동자산', match: (n) => /^유동자산$/.test(n) },
+          { key: '비유동자산', match: (n) => /^비유동자산$/.test(n) },
+          { key: '부채총계', match: (n) => /^부채총계$/.test(n) },
+          { key: '유동부채', match: (n) => /^유동부채$/.test(n) },
+          { key: '비유동부채', match: (n) => /^비유동부채$/.test(n) },
+          { key: '자본총계', match: (n) => /^자본총계$/.test(n) },
+          // Income Statement Items
           { key: '매출액', match: (n) => /(매출액|수익\(매출액\))/.test(n) },
           { key: '영업이익', match: (n) => /영업이익/.test(n) },
           { key: '당기순이익', match: (n) => /(당기순이익|분기순이익|반기순이익)/.test(n) },
@@ -171,19 +211,24 @@
           }
         }
 
-        const labels = pickers.map(p => p.key);
-        // scale to 억원
-        const DIV = 100000000;
+        const barChartLabels = ['자산총계', '부채총계', '자본총계', '매출액', '영업이익', '당기순이익'];
+        const DIV = 100000000; // scale to 억원
         const toEok = (n) => Number.isFinite(n) ? n / DIV : n;
-        const th = labels.map(l => toEok(toNumber(byName[l]?.thstrm_amount)));
-        const fr = labels.map(l => toEok(toNumber(byName[l]?.frmtrm_amount)));
-        const bf = labels.map(l => toEok(toNumber(byName[l]?.bfefrmtrm_amount)));
+        const th = barChartLabels.map(l => toEok(toNumber(byName[l]?.thstrm_amount)));
+        const fr = barChartLabels.map(l => toEok(toNumber(byName[l]?.frmtrm_amount)));
+        const bf = barChartLabels.map(l => toEok(toNumber(byName[l]?.bfefrmtrm_amount)));
 
-        // Render balance sheet visualization for the current period (당기)
-        const currentAssets = toNumber(byName['자산총계']?.thstrm_amount);
-        const currentLiabilities = toNumber(byName['부채총계']?.thstrm_amount);
-        const currentEquity = toNumber(byName['자본총계']?.thstrm_amount);
-        renderBalanceSheet(currentAssets, currentLiabilities, currentEquity);
+        // Data for balance sheet visualization (current period)
+        const bsData = {
+          totalAssets: toNumber(byName['자산총계']?.thstrm_amount),
+          currentAssets: toNumber(byName['유동자산']?.thstrm_amount),
+          nonCurrentAssets: toNumber(byName['비유동자산']?.thstrm_amount),
+          totalLiabilities: toNumber(byName['부채총계']?.thstrm_amount),
+          currentLiabilities: toNumber(byName['유동부채']?.thstrm_amount),
+          nonCurrentLiabilities: toNumber(byName['비유동부채']?.thstrm_amount),
+          totalEquity: toNumber(byName['자본총계']?.thstrm_amount),
+        };
+        renderBalanceSheet(bsData);
 
         const any = [...th, ...fr, ...bf].some(v => !Number.isNaN(v) && v !== 0);
         const ctx = el('chart').getContext('2d');
@@ -191,7 +236,7 @@
         chart = new Chart(ctx, {
           type: 'bar',
           data: {
-            labels,
+            labels: barChartLabels,
             datasets: [
               { label: `당기(${el('year').value})`, data: th.map(v => Number.isNaN(v) ? 0 : v), backgroundColor: '#4f78ff' },
               { label: `전기(${Number(el('year').value)-1})`, data: fr.map(v => Number.isNaN(v) ? 0 : v), backgroundColor: '#ff7f50' },
@@ -217,7 +262,7 @@
         const html = [
           '<table border="1" cellspacing="0" cellpadding="6" style="margin-top:12px; border-color:#ddd;">',
           '<thead><tr><th>항목</th><th>당기</th><th>전기</th><th>전전기</th><th>통화</th></tr></thead><tbody>',
-          ...labels.map((l, i) => `<tr><td>${l}</td><td style="text-align:right;">${fmt(th[i])}</td><td style="text-align:right;">${fmt(fr[i])}</td><td style="text-align:right;">${fmt(bf[i])}</td><td>${currency}</td></tr>`),
+          ...barChartLabels.map((l, i) => `<tr><td>${l}</td><td style="text-align:right;">${fmt(th[i])}</td><td style="text-align:right;">${fmt(fr[i])}</td><td style="text-align:right;">${fmt(bf[i])}</td><td>${currency}</td></tr>`),
           '</tbody></table>'
         ].join('');
         document.getElementById('table').innerHTML = html;
