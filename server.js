@@ -20,23 +20,33 @@ const API_KEY = process.env.OPEN_DART_API_KEY;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // NeDB setup
+const dbPath = path.join(__dirname, 'data/corpCodes.db');
+console.log(`[DEBUG] Loading database from: ${dbPath}`);
+
 const db = Datastore.create({
-  filename: path.join(__dirname, 'data/corpCodes.db'),
+  filename: dbPath,
   autoload: true,
+});
+
+db.load().catch(err => {
+    console.error('[DEBUG] Error loading database:', err);
 });
 
 app.use('/', express.static(path.join(__dirname, 'public')));
 
 // Search corp by name (prefix/substring)
 app.get('/api/search', async (req, res) => {
+  console.log(`[DEBUG] /api/search called with query: ${req.query.q}`);
   try {
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
     // Use a case-insensitive regex for search in NeDB
     const regex = new RegExp(q, 'i');
     const docs = await db.find({ $or: [{ corp_name: regex }, { corp_eng_name: regex }] }).limit(20);
+    console.log(`[DEBUG] Found ${docs.length} documents for query: ${q}`);
     res.json(docs);
   } catch (e) {
+    console.error('[DEBUG] Error in /api/search:', e);
     res.status(500).json({ error: 'search_failed', detail: e.message });
   }
 });
@@ -164,7 +174,9 @@ app.get('/api/metrics', async (req, res) => {
         if (!Number.isFinite(per)) per = tryTable('PER');
         if (!Number.isFinite(pbr)) pbr = tryTable('PBR');
         if (!Number.isFinite(eps)) eps = tryTable('EPS');
-      } catch {} // Ignore errors during scraping
+      } catch (e) {
+        console.error('[DEBUG] Error scraping Naver Finance:', e);
+      }
     }
 
     res.json({
@@ -178,6 +190,7 @@ app.get('/api/metrics', async (req, res) => {
       stock: { stock_code: stock?.stock_code || null, per, pbr, eps }
     });
   } catch (e) {
+    console.error('[DEBUG] Error in /api/metrics:', e);
     res.status(500).json({ error: 'metrics_failed', detail: e.message });
   }
 });
@@ -227,6 +240,7 @@ app.get('/api/explain', async (req, res) => {
     const text = g?.candidates?.[0]?.content?.parts?.[0]?.text || '설명을 생성하지 못했습니다.';
     res.json({ status: '000', text });
   } catch (e) {
+    console.error('[DEBUG] Error in /api/explain:', e);
     res.status(500).json({ error: 'explain_failed', detail: e.message });
   }
 });
