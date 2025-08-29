@@ -12,6 +12,40 @@
       #results div { padding: 6px 8px; cursor: pointer; }
       #results div:hover { background: #f2f2f2; }
       canvas { max-width: 900px; }
+
+      /* Balance Sheet Visualization Styles */
+      #balance-sheet-vis { display: none; margin-top: 20px; }
+      .balance-sheet-container {
+        display: flex;
+        align-items: flex-end;
+        height: 400px;
+        width: 100%;
+        max-width: 600px;
+        border: 1px solid #ccc;
+        padding: 10px;
+        background-color: #f9f9f9;
+        border-radius: 8px;
+      }
+      .bs-box {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-weight: bold;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        transition: height 0.5s ease-in-out;
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .bs-label { font-size: 1.2em; }
+      .bs-value { font-size: 0.9em; margin-top: 5px; }
+      #bs-assets { background-color: #4a90e2; width: 48%; }
+      #bs-liabilities { background-color: #e27c4a; }
+      #bs-equity { background-color: #50e3c2; }
+      .bs-stack { width: 48%; height: 100%; display: flex; flex-direction: column; }
+      .spacer { width: 4%; }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   </head>
@@ -31,6 +65,28 @@
     <div id="results"></div>
     <h3 id="corpTitle"></h3>
     <canvas id="chart" height="140"></canvas>
+
+    <div id="balance-sheet-vis">
+      <h3 style="margin-top:16px;">재무상태표 시각화 (당기)</h3>
+      <div class="balance-sheet-container">
+        <div id="bs-assets" class="bs-box">
+          <div class="bs-label">자산</div>
+          <div id="bs-assets-value" class="bs-value"></div>
+        </div>
+        <div class="spacer"></div>
+        <div class="bs-stack">
+          <div id="bs-liabilities" class="bs-box">
+            <div class="bs-label">부채</div>
+            <div id="bs-liabilities-value" class="bs-value"></div>
+          </div>
+          <div id="bs-equity" class="bs-box">
+            <div class="bs-label">자본</div>
+            <div id="bs-equity-value" class="bs-value"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div id="table"></div>
     <div id="ratios"></div>
     <div class="row" style="margin-top:12px;">
@@ -60,6 +116,30 @@
       });
 
       let chart;
+
+      function renderBalanceSheet(assets, liabilities, equity) {
+        const container = el('balance-sheet-vis');
+        if (!Number.isFinite(assets) || !Number.isFinite(liabilities) || !Number.isFinite(equity) || assets <= 0) {
+          container.style.display = 'none';
+          return;
+        }
+        container.style.display = 'block';
+
+        const toTrillion = (n) => (n / 1_0000_0000_0000).toFixed(2);
+        const fmt = (n) => `${toTrillion(n)}조 원`;
+
+        const liabHeight = (liabilities / assets) * 100;
+        const equityHeight = (equity / assets) * 100;
+
+        el('bs-assets').style.height = '100%';
+        el('bs-liabilities').style.height = `${liabHeight}%`;
+        el('bs-equity').style.height = `${equityHeight}%`;
+
+        el('bs-assets-value').textContent = fmt(assets);
+        el('bs-liabilities-value').textContent = fmt(liabilities);
+        el('bs-equity-value').textContent = fmt(equity);
+      }
+
       function renderChart(rows) {
         const toNumber = (v) => {
           const s = String(v ?? '').replace(/,/g, '').trim();
@@ -98,6 +178,12 @@
         const th = labels.map(l => toEok(toNumber(byName[l]?.thstrm_amount)));
         const fr = labels.map(l => toEok(toNumber(byName[l]?.frmtrm_amount)));
         const bf = labels.map(l => toEok(toNumber(byName[l]?.bfefrmtrm_amount)));
+
+        // Render balance sheet visualization for the current period (당기)
+        const currentAssets = toNumber(byName['자산총계']?.thstrm_amount);
+        const currentLiabilities = toNumber(byName['부채총계']?.thstrm_amount);
+        const currentEquity = toNumber(byName['자본총계']?.thstrm_amount);
+        renderBalanceSheet(currentAssets, currentLiabilities, currentEquity);
 
         const any = [...th, ...fr, ...bf].some(v => !Number.isNaN(v) && v !== 0);
         const ctx = el('chart').getContext('2d');
@@ -229,5 +315,3 @@
     </script>
   </body>
   </html>
-
-
